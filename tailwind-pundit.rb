@@ -65,17 +65,17 @@ after_bundle do
     
     puts "Création des utilisateurs..."
     User.create!(
-      email_address: "admin@prestige.com",
+      email_address: "admin@chalet.com",
       password: "password123",
       admin: true
     )
     
     User.create!(
-      email_address: "client@prestige.com",
+      email_address: "client@chalet.com",
       password: "password123",
       admin: false
     )
-    puts "Terminé ! Admin: admin@prestige.com / pass: password123"
+    puts "Terminé ! Admin: admin@chalet.com / pass: password123"
   RUBY
 
   # 5. Pundit : Protection de l'ApplicationController
