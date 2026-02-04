@@ -25,7 +25,7 @@ gsub_file "app/views/layouts/application.html.erb", '<%= yield %>', <<~HTML
   </div>
 HTML
 
-# 3. Installation et Génération (Tout se passe ici)
+# 3. Installation et Génération
 ########################################
 after_bundle do
   run "bundle exec rails tailwindcss:install"
@@ -33,7 +33,6 @@ after_bundle do
   generate "pundit:install"
   
   # --- MODIFICATION DU MODÈLE USER ---
-  # Ajout de admin? et de la logique OAuth from_omniauth
   file "app/models/user.rb", <<~RUBY, force: true
     class User < ApplicationRecord
       has_secure_password
@@ -48,14 +47,12 @@ after_bundle do
       def self.from_omniauth(auth)
         where(email_address: auth.info.email).first_or_initialize do |user|
           user.password = SecureRandom.hex(16) if user.new_record?
-          # Optionnel: user.name = auth.info.name
         end
       end
     end
   RUBY
 
   # --- CONFIGURATION DE LA MIGRATION ---
-  # On regroupe admin et les champs OAuth (provider, uid)
   generate :migration, "AddAdminAndOauthToUsers", "admin:boolean", "provider:string", "uid:string"
   migration_file = Dir.glob("db/migrate/*_add_admin_and_oauth_to_users.rb").first
   if migration_file
@@ -82,11 +79,10 @@ after_bundle do
     end
   RUBY
 
-  # --- SESSIONS CONTROLLER (Ajout du Callback OAuth) ---
+  # --- SESSIONS CONTROLLER (Callback OAuth) ---
   inject_into_file "app/controllers/sessions_controller.rb", after: "class SessionsController < ApplicationController" do
     <<~RUBY
 
-      # Gère le retour de Google/Facebook/Apple
       def create_from_oauth
         auth = request.env['omniauth.auth']
         @user = User.from_omniauth(auth)
@@ -120,8 +116,13 @@ after_bundle do
     end
   RUBY
 
-  # --- CONFIGURATION OMNIAUTH ---
+  # --- CONFIGURATION OMNIAUTH (Version finale propre) ---
   file "config/initializers/omniauth.rb", <<~RUBY
+    # CONFIGURATION DES CALLBACKS :
+    # Google : https://console.cloud.google.com -> Redirect URI: /auth/google_oauth2/callback
+    # Facebook : https://developers.facebook.com -> Redirect URI: /auth/facebook/callback
+    # Apple : https://developer.apple.com -> Redirect URI: /auth/apple/callback
+    
     OmniAuth.config.allowed_request_methods = [:post, :get]
 
     Rails.application.config.middleware.use OmniAuth::Builder do
@@ -164,6 +165,10 @@ after_bundle do
     GOOGLE_CLIENT_SECRET=votre_secret
     FACEBOOK_APP_ID=votre_id
     FACEBOOK_APP_SECRET=votre_secret
+    APPLE_CLIENT_ID=votre_id
+    APPLE_TEAM_ID=votre_id
+    APPLE_KEY_ID=votre_id
+    APPLE_PRIVATE_KEY="votre_cle_p8"
   TEXT
 
   # Finalisation DB
