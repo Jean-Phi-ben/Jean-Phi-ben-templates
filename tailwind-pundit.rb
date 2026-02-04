@@ -8,7 +8,6 @@ run "if uname | grep -q 'Darwin'; then pgrep spring | xargs kill -9; fi"
 # On retire les anciennes gems Bootstrap/Sprockets du script initial
 gsub_file("Gemfile", /^gem "bootstrap".*\n/, "")
 gsub_file("Gemfile", /^gem "sassc-rails".*\n/, "")
-gsub_file("Gemfile", /^gem "propshaft".*\n/, "") # Rails 8 gère cela par défaut ou via Tailwind
 
 inject_into_file "Gemfile", before: "group :development, :test do" do
   <<~RUBY
