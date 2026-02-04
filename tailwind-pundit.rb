@@ -15,7 +15,7 @@ inject_into_file "Gemfile", before: "group :development, :test do" do
   RUBY
 end
 
-# 2. Layout & Fluidité (Points 7 & 8)
+# 2. Layout & Fluidité
 ########################################
 file "app/views/layouts/_head_scripts.html.erb", "<%= javascript_importmap_tags %>"
 gsub_file "app/views/layouts/application.html.erb", '<%= javascript_importmap_tags %>', '<%= render "layouts/head_scripts" %>'
@@ -32,17 +32,49 @@ after_bundle do
   generate "authentication"
   generate "pundit:install"
   
-  # Génération de l'admin
-  generate :controller, "admin/dashboard", "index", "--no-test-framework"
-  generate :migration, "AddAdminToUsers", "admin:boolean"
-  
-  # Correction de la migration pour le default
-  migration_file = Dir.glob("db/migrate/*_add_admin_to_users.rb").first
-  gsub_file migration_file, /t.boolean :admin/, "t.boolean :admin, default: false" if migration_file
+  # --- MODIFICATION DU MODÈLE USER ---
+  # On écrase le fichier pour ajouter la méthode admin?
+  file "app/models/user.rb", <<~RUBY, force: true
+    class User < ApplicationRecord
+      has_secure_password
+      has_many :sessions, dependent: :destroy
 
-  # --- AJOUT DES FICHIERS DE LOGIQUE ADMIN ---
+      validates :email_address, presence: true, uniqueness: true
+
+      def admin?
+        admin == true
+      end
+    end
+  RUBY
+
+  # --- CONFIGURATION DE LA MIGRATION ADMIN ---
+  generate :migration, "AddAdminToUsers", "admin:boolean"
+  migration_file = Dir.glob("db/migrate/*_add_admin_to_users.rb").first
+  if migration_file
+    gsub_file migration_file, /t.boolean :admin/, "t.boolean :admin, default: false"
+  end
+
+  # --- CONFIGURATION DE L'APPLICATION CONTROLLER ---
+  # On réécrit le contrôleur pour inclure Pundit et la gestion d'erreur
+  file "app/controllers/application_controller.rb", <<~RUBY, force: true
+    class ApplicationController < ActionController::Base
+      include Authentication
+      include Pundit::Authorization
+
+      rescue_from Pundit::NotAuthorizedError, with: :user_not_authorized
+
+      private
+
+      def user_not_authorized
+        flash[:alert] = "Vous n'avez pas l'autorisation d'accéder à cette page."
+        redirect_back_or_to root_path
+      end
+    end
+  RUBY
+
+  # --- LOGIQUE ADMIN & POLICIES ---
+  generate :controller, "admin/dashboard", "index", "--no-test-framework"
   
-  # Création de la Policy Admin (Point de vigilance)
   file "app/policies/admin_policy.rb", <<~RUBY
     class AdminPolicy < ApplicationPolicy
       def index?
@@ -51,7 +83,6 @@ after_bundle do
     end
   RUBY
 
-  # Modification du Dashboard Controller pour utiliser Pundit
   file "app/controllers/admin/dashboard_controller.rb", <<~RUBY, force: true
     class Admin::DashboardController < ApplicationController
       def index
@@ -60,30 +91,25 @@ after_bundle do
     end
   RUBY
 
-  # Injection de Pundit dans ApplicationController
-  inject_into_file "app/controllers/application_controller.rb", after: "include Authentication" do
-    "\n  include Pundit::Authorization"
-  end
-
   # Routes
   route "namespace :admin do root to: 'dashboard#index' end"
   route "root to: 'pages#home'"
   generate :controller, "pages", "home", "--skip-routes"
 
-  # Seed
+  # Seeds
   file "db/seeds.rb", <<~RUBY, force: true
     User.destroy_all
-    User.create!(email_address: "admin@chalet.com", password: "password123", admin: true)
-    User.create!(email_address: "client@chalet.com", password: "password123", admin: false)
+    User.create!(email_address: "admin@prestige.com", password: "password123", admin: true)
+    User.create!(email_address: "client@prestige.com", password: "password123", admin: false)
     puts "Base de données initialisée !"
   RUBY
 
-  # DB Setup
+  # Finalisation DB
   rails_command "db:prepare"
   rails_command "db:seed"
 
   run "touch .env"
   git :init
   git add: "."
-  git commit: "-m 'Setup complet : Auth + Pundit Admin Policy + Tailwind'"
+  git commit: "-m 'Setup Prestige App: Auth, Pundit, Admin & Default Permissions'"
 end
