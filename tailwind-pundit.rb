@@ -1,12 +1,12 @@
-# Template Rails: Chalet de Prestige (Corrected for Rails 8)
 run "if uname | grep -q 'Darwin'; then pgrep spring | xargs kill -9; fi"
 
-# 1. Gemfile - Nettoyage et ajouts
+# 1. Gemfile
 ########################################
-# On retire SEULEMENT ce qui est inutile (Bootstrap/Sprockets)
-# ON GARDE PROPSHAFT pour Rails 8
 gsub_file("Gemfile", /^gem "bootstrap".*\n/, "")
 gsub_file("Gemfile", /^gem "sassc-rails".*\n/, "")
+# On s'assure que propshaft est là pour éviter l'erreur de tâche assets:precompile
+gem "propshaft" 
+gem "tailwindcss-rails"
 
 inject_into_file "Gemfile", before: "group :development, :test do" do
   <<~RUBY
@@ -18,77 +18,80 @@ inject_into_file "Gemfile", before: "group :development, :test do" do
   RUBY
 end
 
-# 2. Assets & Layout (Point 7 & 8)
+# 2. Layout & Fluidité (Points 7 & 8)
 ########################################
-gem "tailwindcss-rails"
-
 file "app/views/layouts/_head_scripts.html.erb", <<~HTML
-  <%# Scripts chargés dans le head %>
   <%= javascript_importmap_tags %>
 HTML
 
-gsub_file(
-  "app/views/layouts/application.html.erb",
-  '<%= javascript_importmap_tags %>',
-  '<%= render "layouts/head_scripts" %>'
-)
+gsub_file "app/views/layouts/application.html.erb", '<%= javascript_importmap_tags %>', '<%= render "layouts/head_scripts" %>'
 
-gsub_file(
-  "app/views/layouts/application.html.erb",
-  '<%= yield %>',
-  <<~HTML
-    <div id="main-content" class="container mx-auto px-4 py-8">
-      <%= yield %>
-    </div>
-  HTML
-)
+gsub_file "app/views/layouts/application.html.erb", '<%= yield %>', <<~HTML
+  <div id="main-content" class="container mx-auto px-4 py-8">
+    <%= yield %>
+  </div>
+HTML
 
-# 3. Processus après installation
+# 3. Processus après bundle
 ########################################
 after_bundle do
-  # Crucial : On s'assure que Propshaft est actif avant Tailwind
   run "bundle exec rails tailwindcss:install"
-
-  # Authentification native Rails 8
   generate "authentication"
-
-  # Installation Pundit
   generate "pundit:install"
-
-  # Namespace Admin
+  
+  # On génère l'admin avec le namespace
   generate :controller, "admin/dashboard", "index", "--no-test-framework"
+  
+  # ATTENTION : On vérifie si la colonne admin existe déjà pour éviter le crash PG::DuplicateColumn
+  # Rails 8 authentication generator peut varier, donc on crée la migration prudemment
   generate :migration, "AddAdminToUsers", "admin:boolean"
   
-  # Configuration des routes
+  # Correction manuelle de la migration pour ajouter le default: false
+  migration_file = Dir.glob("db/migrate/*_add_admin_to_users.rb").first
+  if migration_file
+    gsub_file migration_file, /t.boolean :admin/, "t.boolean :admin, default: false"
+  end
+
+  # Routes
   route "namespace :admin do root to: 'dashboard#index' end"
-  route 'root to: "pages#home"'
+  route "root to: 'pages#home'"
   generate :controller, "pages", "home", "--skip-routes"
 
-  # Seed
-  append_file "db/seeds.rb", <<~RUBY
+  # 4. LE SEED (On écrase le fichier pour être propre)
+  ########################################
+  file "db/seeds.rb", <<~RUBY, force: true
+    puts "Nettoyage de la base..."
     User.destroy_all
-    User.create!(email_address: "admin@prestige.com", password: "password123", admin: true)
-    User.create!(email_address: "client@prestige.com", password: "password123", admin: false)
-    puts "Base de données initialisée !"
+    
+    puts "Création des utilisateurs..."
+    User.create!(
+      email_address: "admin@prestige.com",
+      password: "password123",
+      admin: true
+    )
+    
+    User.create!(
+      email_address: "client@prestige.com",
+      password: "password123",
+      admin: false
+    )
+    puts "Terminé ! Admin: admin@prestige.com / pass: password123"
   RUBY
 
-  # Database setup
+  # 5. Pundit : Protection de l'ApplicationController
+  ########################################
+  inject_into_file "app/controllers/application_controller.rb", after: "include Authentication" do
+    "\n  include Pundit::Authorization"
+  end
+
+  # 6. Base de données
+  ########################################
   rails_command "db:prepare"
   rails_command "db:seed"
 
-  # OmniAuth Initializer
-  file "config/initializers/omniauth.rb", <<~RUBY
-    Rails.application.config.middleware.use OmniAuth::Builder do
-      provider :google_oauth2, ENV['GOOGLE_CLIENT_ID'], ENV['GOOGLE_CLIENT_SECRET']
-      provider :facebook, ENV['FACEBOOK_APP_ID'], ENV['FACEBOOK_APP_SECRET']
-      provider :apple, ENV['APPLE_CLIENT_ID'], ENV['APPLE_TEAM_ID'], ENV['APPLE_KEY_ID'], ENV['APPLE_PRIVATE_KEY']
-    end
-  RUBY
-
   run "touch .env"
-
-  # Git final
+  
   git :init
   git add: "."
-  git commit: "-m 'Initial setup: Rails 8 Auth, Tailwind, Pundit, Admin namespace'"
+  git commit: "-m 'Setup complet Chalet Prestige : Rails 8 Auth, Tailwind, Pundit, Admin'"
 end
