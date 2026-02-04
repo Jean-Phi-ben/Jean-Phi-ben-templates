@@ -1,11 +1,10 @@
-# Template Rails: Chalet de Prestige
-# Usage: rails new app_name -m path/to/template.rb
-
+# Template Rails: Chalet de Prestige (Corrected for Rails 8)
 run "if uname | grep -q 'Darwin'; then pgrep spring | xargs kill -9; fi"
 
-# 1. Gemfile - Nettoyage et ajouts (Point 2, 3, 4)
+# 1. Gemfile - Nettoyage et ajouts
 ########################################
-# On retire les anciennes gems Bootstrap/Sprockets du script initial
+# On retire SEULEMENT ce qui est inutile (Bootstrap/Sprockets)
+# ON GARDE PROPSHAFT pour Rails 8
 gsub_file("Gemfile", /^gem "bootstrap".*\n/, "")
 gsub_file("Gemfile", /^gem "sassc-rails".*\n/, "")
 
@@ -19,20 +18,15 @@ inject_into_file "Gemfile", before: "group :development, :test do" do
   RUBY
 end
 
-# 2. Tailwind & Assets (Point 2 & 7)
+# 2. Assets & Layout (Point 7 & 8)
 ########################################
 gem "tailwindcss-rails"
 
-# 3. Layout & Fluidité JS (Point 7 & 8)
-########################################
-# Création du partial pour isoler le JS du Head
 file "app/views/layouts/_head_scripts.html.erb", <<~HTML
-  <%# Scripts chargés dans le head pour éviter les sauts de contenu %>
+  <%# Scripts chargés dans le head %>
   <%= javascript_importmap_tags %>
 HTML
 
-# Modification de application.html.erb
-# On insère le rendu du head et le div "main-content"
 gsub_file(
   "app/views/layouts/application.html.erb",
   '<%= javascript_importmap_tags %>',
@@ -49,23 +43,20 @@ gsub_file(
   HTML
 )
 
-# 4. Processus après installation des Gems
+# 3. Processus après installation
 ########################################
 after_bundle do
-  # Installation Tailwind
+  # Crucial : On s'assure que Propshaft est actif avant Tailwind
   run "bundle exec rails tailwindcss:install"
 
-  # Authentification native Rails 8 (Point 3)
-  # Remplace 'devise' par le système léger de Rails 8
+  # Authentification native Rails 8
   generate "authentication"
 
-  # Installation Pundit (Point 1)
+  # Installation Pundit
   generate "pundit:install"
 
-  # Namespace Admin (Point 1)
+  # Namespace Admin
   generate :controller, "admin/dashboard", "index", "--no-test-framework"
-  
-  # Ajout du rôle admin aux utilisateurs (Point 5 & 6)
   generate :migration, "AddAdminToUsers", "admin:boolean"
   
   # Configuration des routes
@@ -73,27 +64,19 @@ after_bundle do
   route 'root to: "pages#home"'
   generate :controller, "pages", "home", "--skip-routes"
 
-  # Seed pour les utilisateurs tests (Point 5 & 6)
+  # Seed
   append_file "db/seeds.rb", <<~RUBY
     User.destroy_all
-    User.create!(
-      email_address: "admin@prestige.com",
-      password: "password123",
-      admin: true
-    )
-    User.create!(
-      email_address: "client@prestige.com",
-      password: "password123",
-      admin: false
-    )
-    puts "Base de données initialisée : admin@prestige.com / client@prestige.com"
+    User.create!(email_address: "admin@prestige.com", password: "password123", admin: true)
+    User.create!(email_address: "client@prestige.com", password: "password123", admin: false)
+    puts "Base de données initialisée !"
   RUBY
 
   # Database setup
   rails_command "db:prepare"
   rails_command "db:seed"
 
-  # OmniAuth Initializer (Point 4)
+  # OmniAuth Initializer
   file "config/initializers/omniauth.rb", <<~RUBY
     Rails.application.config.middleware.use OmniAuth::Builder do
       provider :google_oauth2, ENV['GOOGLE_CLIENT_ID'], ENV['GOOGLE_CLIENT_SECRET']
@@ -102,10 +85,9 @@ after_bundle do
     end
   RUBY
 
-  # Dotenv
   run "touch .env"
 
-  # Git final commit
+  # Git final
   git :init
   git add: "."
   git commit: "-m 'Initial setup: Rails 8 Auth, Tailwind, Pundit, Admin namespace'"
