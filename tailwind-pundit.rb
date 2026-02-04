@@ -104,6 +104,47 @@ after_bundle do
     puts "Base de données initialisée !"
   RUBY
 
+  inject_into_file "app/controllers/sessions_controller.rb", after: "class SessionsController < ApplicationController" do
+  <<~RUBY
+
+    # Cette méthode gère le retour de Google/Facebook/Apple
+    def create_from_oauth
+      auth = request.env['omniauth.auth']
+      @user = User.from_omniauth(auth)
+
+      if @user.save
+        start_new_session_for @user
+        redirect_to root_path, notice: "Connexion réussie via \#{auth.provider} !"
+      else
+        redirect_to new_session_path, alert: "Échec de la connexion sociale."
+      end
+    end
+  RUBY
+end
+
+  file "config/initializers/omniauth.rb", <<~RUBY
+  # Nécessaire pour éviter les erreurs d'authenticité lors du retour d'OAuth
+  OmniAuth.config.allowed_request_methods = [:post, :get]
+
+  Rails.application.config.middleware.use OmniAuth::Builder do
+    provider :google_oauth2, ENV['GOOGLE_CLIENT_ID'], ENV['GOOGLE_CLIENT_SECRET']
+    provider :facebook, ENV['FACEBOOK_APP_ID'], ENV['FACEBOOK_APP_SECRET']
+    provider :apple, ENV['APPLE_CLIENT_ID'], ENV['APPLE_TEAM_ID'], ENV['APPLE_KEY_ID'], ENV['APPLE_PRIVATE_KEY']
+  end
+RUBY
+
+  append_file "app/views/sessions/new.html.erb" do
+  <<~HTML
+    <div class="mt-6 border-t pt-6">
+      <p class="text-center text-sm text-gray-500 mb-4">Ou se connecter avec</p>
+      <div class="flex flex-col gap-3">
+        <%= button_to "Continuer avec Google", "/auth/google_oauth2", data: { turbo: false }, class: "w-full py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 flex justify-center items-center" %>
+        <%= button_to "Continuer avec Apple", "/auth/apple", data: { turbo: false }, class: "w-full py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-black text-white text-sm font-medium hover:bg-gray-800 flex justify-center items-center" %>
+      </div>
+    </div>
+  HTML
+end
+
   # Finalisation DB
   rails_command "db:prepare"
   rails_command "db:seed"
